@@ -10,7 +10,8 @@ from io import BytesIO
 # Configuração da página
 st.set_page_config(
     page_title="TikTok Video Downloader",
-    page_icon="🎬"
+    page_icon="🎬",
+    layout="wide"
 )
 
 # CSS personalizado
@@ -319,3 +320,4 @@ st.markdown("""
 </div>
 
 """, unsafe_allow_html=True)
+

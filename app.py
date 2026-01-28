@@ -10,8 +10,7 @@ from io import BytesIO
 # Configuração da página
 st.set_page_config(
     page_title="TikTok Video Downloader",
-    page_icon="🎬",
-    layout="wide"
+    page_icon="🎬"
 )
 
 # CSS personalizado
@@ -318,4 +317,5 @@ st.markdown("""
     <p>⚠️ <strong>Aviso Legal:</strong> Use este aplicativo apenas para baixar vídeos que você tem permissão para usar.</p>
     <p>Respeite os direitos autorais e as políticas do TikTok.</p>
 </div>
+
 """, unsafe_allow_html=True)

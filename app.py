@@ -201,13 +201,6 @@ with st.expander("💡 Como usar"):
     **Formato do arquivo:** O vídeo será salvo como `usuario_id.mp4`
     """)
 
-# Exemplos
-with st.expander("📝 Exemplos de URLs válidas"):
-    st.code("""
-    https://www.tiktok.com/@usuario/video/1234567890123456789
-    https://www.tiktok.com/@nomeusuario/video/9876543210987654321?lang=pt-BR
-    """)
-
 # Quando o botão é clicado
 if download_btn and url:
     with st.spinner("🔍 Analisando URL..."):
@@ -320,4 +313,5 @@ st.markdown("""
 </div>
 
 """, unsafe_allow_html=True)
+
 

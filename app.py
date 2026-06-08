@@ -107,74 +107,99 @@ def normalize_url(video_url):
         return 'https://' + video_url
     return video_url
 
-def extract_video_url_from_response(data, quality='hd'):
-    """Extract video URL from API response based on quality preference"""
-    video_url = None
-    quality_label = 'Normal'
+def format_bytes(size):
+    """Format byte size for display"""
+    if not size:
+        return "desconhecido"
+    size = int(size)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.1f} {unit}" if unit != "B" else f"{size} B"
+        size /= 1024
 
-    if 'data' in data:
-        api_data = data['data']
-        if quality == 'hd' and api_data.get('hdplay'):
-            video_url = api_data['hdplay']
-            quality_label = 'HD'
-        elif api_data.get('play'):
-            video_url = api_data['play']
-            quality_label = 'Normal'
-        elif api_data.get('hdplay'):
-            video_url = api_data['hdplay']
-            quality_label = 'HD'
-
-    elif 'video' in data and 'url' in data['video']:
-        video_url = data['video']['url']
-    elif 'url' in data:
-        video_url = data['url']
-
-    if video_url:
-        return normalize_url(video_url), quality_label
-
-    return None, None
-
-def get_video_url_from_api(url, quality='hd'):
-    """Get video URL from TikTok APIs"""
-    api_services = [
-        {
-            'name': 'TikMate',
-            'url': 'https://www.tikwm.com/api/',
-            'method': 'POST',
-            'params': {'url': url}
-        },
-        {
-            'name': 'TikDown',
-            'url': 'https://api.tikdown.org/api/download',
-            'method': 'GET',
-            'params': {'url': url}
-        }
-    ]
-    
+def fetch_tikwm_data(url, quality='hd'):
+    """Fetch video metadata from TikWM API"""
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept': 'application/json, text/plain, */*'
     }
-    
-    for api in api_services:
-        try:
-            if api['method'] == 'POST':
-                response = requests.post(api['url'], data=api['params'], headers=headers, timeout=30)
-            else:
-                response = requests.get(api['url'], params=api['params'], headers=headers, timeout=30)
-            
-            response.raise_for_status()
-            data = response.json()
-            
-            video_url, quality_label = extract_video_url_from_response(data, quality)
-            
+
+    params = {'url': url}
+    if quality == 'hd':
+        params['hd'] = 1
+
+    response = requests.post(
+        'https://www.tikwm.com/api/',
+        data=params,
+        headers=headers,
+        timeout=30
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    if data.get('code') != 0 or 'data' not in data:
+        return None
+
+    return data['data']
+
+def pick_video_from_tikwm(api_data, quality='hd'):
+    """Pick the correct URL from TikWM response without cross-quality fallback"""
+    play = api_data.get('play')
+    hdplay = api_data.get('hdplay')
+    normal_size = api_data.get('size')
+    hd_size = api_data.get('hd_size') or api_data.get('hdsize')
+    same_url = bool(play and hdplay and play == hdplay)
+
+    if quality == 'hd':
+        if not hdplay:
+            return None, None, normal_size, hd_size, same_url
+        return normalize_url(hdplay), 'HD', normal_size, hd_size, same_url
+
+    if not play:
+        return None, None, normal_size, hd_size, same_url
+    return normalize_url(play), 'Normal', normal_size, hd_size, same_url
+
+def get_video_url_from_api(url, quality='hd'):
+    """Get video URL from TikTok APIs"""
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json, text/plain, */*'
+    }
+
+    try:
+        api_data = fetch_tikwm_data(url, quality)
+        if api_data:
+            video_url, quality_label, normal_size, hd_size, same_url = pick_video_from_tikwm(
+                api_data, quality
+            )
             if video_url:
-                return video_url, api['name'], quality_label
-                
-        except:
-            continue
-    
-    return None, None, None
+                return video_url, 'TikWM', quality_label, normal_size, hd_size, same_url
+    except:
+        pass
+
+    # Fallback sem suporte a múltiplas qualidades
+    try:
+        response = requests.get(
+            'https://api.tikdown.org/api/download',
+            params={'url': url},
+            headers=headers,
+            timeout=30
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        video_url = None
+        if 'video' in data and 'url' in data['video']:
+            video_url = data['video']['url']
+        elif 'url' in data:
+            video_url = data['url']
+
+        if video_url:
+            return normalize_url(video_url), 'TikDown', 'Única disponível', None, None, True
+    except:
+        pass
+
+    return None, None, None, None, None, False
 
 def get_binary_file_downloader_html(bin_file, file_label='File'):
     """Create a download link for binary file"""
@@ -253,24 +278,41 @@ if download_btn and url:
         progress_bar.progress(25, text="🔍 Buscando URL do vídeo...")
         
         # Obter URL do vídeo
-        video_url, api_name, actual_quality = get_video_url_from_api(url, quality)
+        video_url, api_name, actual_quality, normal_size, hd_size, same_url = get_video_url_from_api(
+            url, quality
+        )
         
         if not video_url:
-            result_placeholder.error("""
-            ❌ Não foi possível encontrar o vídeo!
+            unavailable_quality = "HD" if quality == "hd" else "Normal"
+            result_placeholder.error(f"""
+            ❌ Não foi possível encontrar o vídeo em qualidade **{unavailable_quality}**!
             
             **Possíveis causas:**
-            1. O vídeo pode ser privado ou removido
-            2. O TikTok pode estar bloqueado na sua região
+            1. Este vídeo pode não ter versão {unavailable_quality} separada
+            2. O vídeo pode ser privado ou removido
             3. As APIs podem estar temporariamente indisponíveis
             
             **Soluções:**
+            - Tente a outra qualidade
             - Verifique se o vídeo é público
-            - Tente com outro vídeo
             - Tente novamente mais tarde
             """)
             progress_bar.empty()
             st.stop()
+
+        if same_url and api_name == 'TikWM':
+            result_placeholder.warning(
+                "⚠️ Este vídeo só possui uma versão disponível na API. "
+                "HD e Normal podem resultar no mesmo arquivo."
+            )
+
+        if normal_size or hd_size:
+            result_placeholder.info(f"""
+            **📦 Tamanhos estimados pela API:**
+            - Normal: {format_bytes(normal_size)}
+            - HD: {format_bytes(hd_size)}
+            - Selecionado: {format_bytes(hd_size if quality == 'hd' else normal_size)}
+            """)
         
         progress_bar.progress(50, text=f"✅ URL encontrada via {api_name}")
         
@@ -303,7 +345,7 @@ if download_btn and url:
             - 📁 Arquivo: `{filename}`
             - 🎞️ Qualidade: {actual_quality}
             - 🔌 Fonte: {api_name}
-            - 📤 Tamanho: {os.path.getsize(tmp_file_path):,} bytes
+            - 📤 Tamanho baixado: {format_bytes(os.path.getsize(tmp_file_path))}
             
             Clique no botão abaixo para baixar o vídeo para seu computador:
             """)

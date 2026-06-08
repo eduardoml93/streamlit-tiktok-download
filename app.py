@@ -99,7 +99,42 @@ def extract_video_info(url):
     except Exception as e:
         return None, None
 
-def get_video_url_from_api(url):
+def normalize_url(video_url):
+    """Ensure URL has proper protocol"""
+    if video_url.startswith('//'):
+        return 'https:' + video_url
+    if not video_url.startswith('http'):
+        return 'https://' + video_url
+    return video_url
+
+def extract_video_url_from_response(data, quality='hd'):
+    """Extract video URL from API response based on quality preference"""
+    video_url = None
+    quality_label = 'Normal'
+
+    if 'data' in data:
+        api_data = data['data']
+        if quality == 'hd' and api_data.get('hdplay'):
+            video_url = api_data['hdplay']
+            quality_label = 'HD'
+        elif api_data.get('play'):
+            video_url = api_data['play']
+            quality_label = 'Normal'
+        elif api_data.get('hdplay'):
+            video_url = api_data['hdplay']
+            quality_label = 'HD'
+
+    elif 'video' in data and 'url' in data['video']:
+        video_url = data['video']['url']
+    elif 'url' in data:
+        video_url = data['url']
+
+    if video_url:
+        return normalize_url(video_url), quality_label
+
+    return None, None
+
+def get_video_url_from_api(url, quality='hd'):
     """Get video URL from TikTok APIs"""
     api_services = [
         {
@@ -131,34 +166,15 @@ def get_video_url_from_api(url):
             response.raise_for_status()
             data = response.json()
             
-            # Try different response formats
-            video_url = None
-            
-            # TikMate format
-            if 'data' in data and 'play' in data['data']:
-                video_url = data['data']['play']
-            elif 'data' in data and 'hdplay' in data['data']:
-                video_url = data['data']['hdplay']
-            
-            # TikDown format
-            elif 'video' in data and 'url' in data['video']:
-                video_url = data['video']['url']
-            elif 'url' in data:
-                video_url = data['url']
+            video_url, quality_label = extract_video_url_from_response(data, quality)
             
             if video_url:
-                # Ensure URL has proper protocol
-                if video_url.startswith('//'):
-                    video_url = 'https:' + video_url
-                elif not video_url.startswith('http'):
-                    video_url = 'https://' + video_url
-                
-                return video_url, api['name']
+                return video_url, api['name'], quality_label
                 
         except:
             continue
     
-    return None, None
+    return None, None, None
 
 def get_binary_file_downloader_html(bin_file, file_label='File'):
     """Create a download link for binary file"""
@@ -169,18 +185,26 @@ def get_binary_file_downloader_html(bin_file, file_label='File'):
     return href
 
 # Interface principal
+url = st.text_input(
+    "🔗 URL do TikTok:",
+    placeholder="https://www.tiktok.com/@usuario/video/123456789...",
+    help="Cole o link completo do vídeo do TikTok"
+)
+
+quality = st.radio(
+    "🎞️ Qualidade do vídeo:",
+    options=["hd", "normal"],
+    format_func=lambda q: "HD (máxima qualidade)" if q == "hd" else "Normal",
+    horizontal=True,
+    help="HD oferece a melhor resolução disponível. Normal usa qualidade padrão."
+)
+
 col1, col2 = st.columns([3, 1])
 
 with col1:
-    url = st.text_input(
-        "🔗 URL do TikTok:",
-        placeholder="https://www.tiktok.com/@usuario/video/123456789...",
-        help="Cole o link completo do vídeo do TikTok"
-    )
+    st.caption("Escolha a qualidade acima e clique em baixar.")
 
 with col2:
-    st.write("")
-    st.write("")
     download_btn = st.button("📥 Baixar Vídeo", type="primary", use_container_width=True)
 
 # Barra de progresso placeholder
@@ -195,10 +219,11 @@ with st.expander("💡 Como usar"):
     1. Encontre o vídeo que deseja baixar no TikTok
     2. Clique em "Compartilhar" e depois em "Copiar link"
     3. Cole o link no campo acima
-    4. Clique em "Baixar Vídeo"
-    5. Aguarde o processamento e clique no botão de download
+    4. Escolha a qualidade: **HD** ou **Normal**
+    5. Clique em "Baixar Vídeo"
+    6. Aguarde o processamento e clique no botão de download
     
-    **Formato do arquivo:** O vídeo será salvo como `usuario_id.mp4`
+    **Formato do arquivo:** O vídeo será salvo como `usuario_id.mp4` ou `usuario_id_hd.mp4`
     """)
 
 # Quando o botão é clicado
@@ -211,13 +236,16 @@ if download_btn and url:
             result_placeholder.error("❌ URL inválida! Certifique-se de que é um link de vídeo do TikTok válido.")
             st.stop()
         
-        filename = f"{username}_{video_id}.mp4"
+        quality_suffix = "_hd" if quality == "hd" else ""
+        filename = f"{username}_{video_id}{quality_suffix}.mp4"
+        quality_label = "HD (máxima qualidade)" if quality == "hd" else "Normal"
         
         # Mostrar informações
         result_placeholder.info(f"""
         **📋 Informações do vídeo:**
         - 👤 Usuário: @{username}
         - 🆔 ID do vídeo: {video_id}
+        - 🎞️ Qualidade solicitada: {quality_label}
         - 💾 Nome do arquivo: `{filename}`
         """)
         
@@ -225,7 +253,7 @@ if download_btn and url:
         progress_bar.progress(25, text="🔍 Buscando URL do vídeo...")
         
         # Obter URL do vídeo
-        video_url, api_name = get_video_url_from_api(url)
+        video_url, api_name, actual_quality = get_video_url_from_api(url, quality)
         
         if not video_url:
             result_placeholder.error("""
@@ -273,6 +301,7 @@ if download_btn and url:
             
             **📊 Detalhes:**
             - 📁 Arquivo: `{filename}`
+            - 🎞️ Qualidade: {actual_quality}
             - 🔌 Fonte: {api_name}
             - 📤 Tamanho: {os.path.getsize(tmp_file_path):,} bytes
             
@@ -313,5 +342,3 @@ st.markdown("""
 </div>
 
 """, unsafe_allow_html=True)
-
-

@@ -261,8 +261,7 @@ if download_btn and url:
             result_placeholder.error("❌ URL inválida! Certifique-se de que é um link de vídeo do TikTok válido.")
             st.stop()
         
-        quality_suffix = "_hd" if quality == "hd" else ""
-        filename = f"{username}_{video_id}{quality_suffix}.mp4"
+        filename = f"{username}_{video_id}.mp4"
         quality_label = "HD (máxima qualidade)" if quality == "hd" else "Normal"
         
         # Mostrar informações
